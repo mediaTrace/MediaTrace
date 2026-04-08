@@ -370,6 +370,15 @@ const openAddDialog = async () => {
   }
   showAdd.value = true
   await loadAccounts()
+  
+  if (accounts.value.length > 0) {
+    const lastAccountId = localStorage.getItem('last_account_id')
+    if (lastAccountId && accounts.value.some(acc => acc.account_id === lastAccountId)) {
+      form.value.accountId = lastAccountId
+    } else {
+      form.value.accountId = accounts.value[0].account_id
+    }
+  }
 }
 
 const openEditDialog = async (row: any) => {
@@ -488,6 +497,10 @@ const submitTask = async () => {
     schedule_enabled: form.value.schedule_type ? 1 : 0,
     schedule_at: form.value.schedule_type === 'once' ? form.value.schedule_at : null,
     schedule_interval_ms: form.value.schedule_type === 'interval' ? intervalMs : null
+  }
+
+  if (form.value.accountId) {
+    localStorage.setItem('last_account_id', form.value.accountId)
   }
 
   try {

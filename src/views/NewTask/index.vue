@@ -75,6 +75,7 @@ const taskForm = reactive<TaskConfig>({
   platform: 'dy',
   type: 'search',
   id: '',
+  accountId: '',
   keywords: '',
   filter_keywords: settingsStore.settings.filter_keywords.join(','),
   sort_type: sortType.items[0].value,
@@ -248,10 +249,29 @@ const loadAccounts = async () => {
   try {
     const res = await ipc.invoke('account:list')
     accounts.value = Array.isArray(res) ? res : []
+    
+    // 默认选择账号逻辑
+    if (accounts.value.length > 0) {
+      const lastAccountId = localStorage.getItem('last_account_id')
+      if (lastAccountId && accounts.value.some(acc => acc.account_id === lastAccountId)) {
+        taskForm.accountId = lastAccountId
+      } else {
+        taskForm.accountId = accounts.value[0].account_id
+      }
+    } else {
+      taskForm.accountId = ''
+    }
   } catch {
     accounts.value = []
+    taskForm.accountId = ''
   }
 }
+
+watch(() => taskForm.accountId, (newVal) => {
+  if (newVal) {
+    localStorage.setItem('last_account_id', newVal)
+  }
+})
 
 const updateCommentFilters = (v: Array<string>) => {
   commentFilters.value = v
@@ -296,6 +316,7 @@ const startTask = async () => {
             sortType: taskForm.sort_type,
             publishTime: taskForm.publish_time,
             commentFilters: taskForm.filter_keywords,
+            accountId: taskForm.accountId,
             advanced: { ...advanced }
           },
           schedule_type: null,
