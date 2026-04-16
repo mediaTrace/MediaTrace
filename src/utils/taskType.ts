@@ -113,28 +113,27 @@ type: 链接类型，video 或 user
 转换后的链接地址，转换失败则返回 null
 */
 export function convertLink(url: string, platform: string, type: string): string { 
+  if (!url) return ''
+  const value = String(url).trim()
   if (platform === 'douyin') {
-    // 若传入已是链接，且为抖音短链或完整链接，则直接返回
-    if (/^https?:\/\/v\.douyin\.com\//.test(url) || /^https?:\/\/(www\.)?douyin\.com\//.test(url)) {
-      return url
+    if (/^https?:\/\/v\.douyin\.com\//.test(value) || /^https?:\/\/(www\.)?douyin\.com\//.test(value)) {
+      return value
     }
     if (type === 'video') {
-      // 抖音视频链接转换逻辑
-      return 'https://www.douyin.com/video/' + url
+      return 'https://www.douyin.com/video/' + value
     }
     if (type === 'user') {
-      // 抖音用户链接转换逻辑
-      return 'https://www.douyin.com/user/' + url
+      return 'https://www.douyin.com/user/' + value
     }
   }
   if (platform === 'xhs') {
     if (type === 'video') {
-      // 小红书视频链接转换逻辑
-      return url
+      if (/^https?:\/\/(www\.)?xiaohongshu\.com\//.test(value)) return value
+      return 'https://www.xiaohongshu.com/explore/' + value
     }
     if (type === 'user') {
-      // 小红书用户链接转换逻辑
-      return 'https://www.xiaohongshu.com/user/profile/' + url
+      if (/^https?:\/\/(www\.)?xiaohongshu\.com\//.test(value)) return value
+      return 'https://www.xiaohongshu.com/user/profile/' + value
     }
   }
   return ''

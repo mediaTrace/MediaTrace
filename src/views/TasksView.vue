@@ -52,7 +52,7 @@
     </div>
     <div class="flex-1 bg-white shadow-sm overflow-hidden flex flex-col">
       <el-table 
-        :data="tasks" 
+        :data="paginatedTasks" 
         v-loading="loading" 
         style="width: 100%"
         height="100%"
@@ -138,6 +138,23 @@
           </template>
         </el-table-column>
 
+        <el-table-column label="采集统计" min-width="190">
+          <template #default="{ row }">
+            <div class="text-xs text-gray-500 font-mono flex flex-col gap-0.5">
+              <div>视频 新增/更新: {{ row.new_videos ?? 0 }}/{{ row.updated_videos ?? 0 }}</div>
+              <div>评论 新增/更新: {{ row.new_comments ?? 0 }}/{{ row.updated_comments ?? 0 }}</div>
+            </div>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="错误信息" width="220" prop="error" :show-overflow-tooltip="{
+          placement: 'left-start',
+          popperStyle: {
+            maxWidth: '420px'
+          }
+        }">
+        </el-table-column>
+
         <el-table-column label="操作" width="180" align="center" fixed="right">
           <template #default="{ row }">
             <div class="flex items-center justify-center gap-1">
@@ -179,13 +196,22 @@
           </template>
         </el-table-column>
       </el-table>
-      <div class="p-4 border-t border-gray-100 flex justify-between items-center bg-gray-50">
-        <div class="text-xs text-gray-500">
-          总计 <span class="font-bold text-gray-800">{{ tasks.length }}</span> 个任务，运行中 <span class="font-bold text-emerald-600">{{ taskStats.running }}</span> 个，已完成 <span class="font-bold text-blue-600">{{ taskStats.completed }}</span> 个，失败 <span class="font-bold text-red-600">{{ taskStats.failed }}</span> 个
+      <div class="p-4 border-t border-gray-100 bg-gray-50">
+        <div class="flex items-center justify-between gap-3 max-md:flex-col max-md:items-start">
+          <div class="text-xs text-gray-500">
+            总计 <span class="font-bold text-gray-800">{{ tasks.length }}</span> 条记录
+          </div>
+          <el-pagination
+            v-model:current-page="pagination.currentPage"
+            v-model:page-size="pagination.pageSize"
+            :page-sizes="[10, 20, 50, 100]"
+            :total="tasks.length"
+            layout="sizes, prev, pager, next, jumper"
+            background
+            @current-change="handleCurrentChange"
+            @size-change="handleSizeChange"
+          />
         </div>
-        <el-button text type="primary" @click="loadTasks">
-          <RefreshCw :size="14" class="mr-1.5" /> 立即刷新
-        </el-button>
       </div>
     </div>
 
@@ -272,13 +298,14 @@
         </div>
 
         <el-form-item label="高级参数">
+          <!-- 不允许输入 -->
           <el-input 
-            v-model="form.params" 
-            placeholder="{}" 
-            type="textarea" 
-            :rows="2"
+            v-model="form.params"
+            placeholder="{}"
+            type="textarea"
+            disabled
+            :rows="5"
             class="font-mono text-xs"
-            resize="none"
           />
         </el-form-item>
       </el-form>
@@ -305,6 +332,10 @@ const loading = ref(false)
 const showAdd = ref(false)
 const isEdit = ref(false)
 const now = ref(Date.now())
+const pagination = reactive({
+  currentPage: 1,
+  pageSize: 10
+})
 let timer: any = null
 
 const filter = reactive({
@@ -329,6 +360,12 @@ const taskStats = computed(() => {
     },
     { running: 0, completed: 0, failed: 0 }
   )
+})
+
+const paginatedTasks = computed(() => {
+  const start = (pagination.currentPage - 1) * pagination.pageSize
+  const end = start + pagination.pageSize
+  return tasks.value.slice(start, end)
 })
 
 const form = ref({ 
@@ -437,11 +474,24 @@ const loadTasks = async () => {
       items = items.filter((t: any) => t.task_name?.toLowerCase().includes(k))
     }
     tasks.value = items
+    const totalPages = Math.max(1, Math.ceil(tasks.value.length / pagination.pageSize))
+    if (pagination.currentPage > totalPages) {
+      pagination.currentPage = totalPages
+    }
   } catch (err) {
     console.error(err)
   } finally {
     loading.value = false
   }
+}
+
+const handleCurrentChange = (page: number) => {
+  pagination.currentPage = page
+}
+
+const handleSizeChange = (size: number) => {
+  pagination.pageSize = size
+  pagination.currentPage = 1
 }
 
 const deleteTask = async (id: string) => {
@@ -607,6 +657,22 @@ const getCrawlTypeLabel = (type: string) => {
   return map[type] || type
 }
 
+const formatParameters = (parameters: any) => {
+  if (!parameters) return '-'
+  if (typeof parameters === 'string') return parameters
+  try {
+    return JSON.stringify(parameters)
+  } catch {
+    return String(parameters)
+  }
+}
+
+const getProgress = (progress: number) => {
+  const value = Number(progress ?? 0)
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.min(100, Math.round(value)))
+}
+
 const toggleSchedule = async (row: any) => {
   try {
     await window.ipcRenderer.invoke('task:update', { 
@@ -666,7 +732,7 @@ onUnmounted(() => {
 :deep(.el-input__wrapper) {
   box-shadow: none;
   border: 1px solid #e5e7eb;
-  border-radius: 8px;
+  /* border-radius: 8px; */
   background-color: #f9fafb;
 }
 :deep(.el-input__wrapper:hover) {
@@ -680,7 +746,7 @@ onUnmounted(() => {
 :deep(.el-select__wrapper) {
   box-shadow: none !important;
   border: 1px solid #e5e7eb;
-  border-radius: 8px;
+  /* border-radius: 8px; */
   background-color: #f9fafb;
 }
 :deep(.el-dialog) {

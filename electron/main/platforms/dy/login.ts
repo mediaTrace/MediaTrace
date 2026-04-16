@@ -141,7 +141,7 @@ export class DouyinLogin {
    */
   public async loginByCookies(): Promise<void> {
     logger.info("使用 Cookie 登录");
-    logger.info(`Cookie: ${this.cookieStr}`);
+    // logger.info(`Cookie: ${this.cookieStr}`);
     // const cookiesString = 'ddd'
     const s = String(this.cookieStr || "").trim();
     if (!s) return;
@@ -152,7 +152,6 @@ export class DouyinLogin {
         .map((c) => normalizeCookieForPlaywright(c))
         .filter((c) => Boolean(c?.name) && Boolean(c?.value));
       if (!cookies.length) return;
-      console.log("Cookie1111111111111111:");
       await this.browserContext.addCookies(cookies as any).catch(() => undefined);
       await this.contextPage.reload({ waitUntil: "domcontentloaded" }).catch(() => undefined);
       return;

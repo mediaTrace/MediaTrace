@@ -1,6 +1,8 @@
 import { ipcMain, app, BrowserWindow, dialog } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
+import { Readable, Transform } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import { chromium } from 'playwright'
 import { openSqlite, initSqliteSchema, type SqliteDb } from './storage/db/sqlite'
 import { TasksRepo } from './storage/tasksRepo'
@@ -87,6 +89,50 @@ const saveSystemSettings = (settings: SystemSettings) => {
   fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8')
 }
 
+const sanitizeFileName = (value: string) => value.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 200)
+
+const ensureUniqueFilePath = (dir: string, filename: string) => {
+  const ext = path.extname(filename)
+  const base = path.basename(filename, ext)
+  let target = path.join(dir, filename)
+  let index = 1
+  while (fs.existsSync(target)) {
+    target = path.join(dir, `${base}(${index})${ext}`)
+    index += 1
+  }
+  return target
+}
+
+const getExtensionFromContentType = (contentType: string) => {
+  const value = contentType.toLowerCase().split(';')[0].trim()
+  if (value.includes('video/mp4')) return '.mp4'
+  if (value.includes('video/webm')) return '.webm'
+  if (value.includes('video/quicktime')) return '.mov'
+  if (value.includes('audio/mpeg')) return '.mp3'
+  if (value.includes('audio/mp4')) return '.m4a'
+  if (value.includes('audio/aac')) return '.aac'
+  if (value.includes('audio/wav')) return '.wav'
+  if (value.includes('audio/ogg')) return '.ogg'
+  if (value.includes('application/octet-stream')) return ''
+  return ''
+}
+
+const getFileNameFromDisposition = (contentDisposition: string) => {
+  const utf8Match = contentDisposition.match(/filename\*\s*=\s*UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]).replace(/["']/g, '')
+    } catch {
+      return utf8Match[1].replace(/["']/g, '')
+    }
+  }
+  const basicMatch = contentDisposition.match(/filename\s*=\s*("?)([^";]+)\1/i)
+  if (basicMatch?.[2]) {
+    return basicMatch[2].trim()
+  }
+  return ''
+}
+
 export async function setupIpc() {
   console.log('[IPC] Setting up IPC...')
   let systemSettings = loadSystemSettings()
@@ -122,6 +168,14 @@ export async function setupIpc() {
   
   // 调度器定时器引用
   let scheduleTimer: NodeJS.Timeout | null = null
+  const mediaDownloadStatus = new Map<string, {
+    status: 'downloading' | 'done' | 'error'
+    progress: number
+    receivedBytes: number
+    totalBytes: number
+    filePath?: string
+    error?: string
+  }>()
 
   // 辅助函数：广播事件
   const broadcast = (channel: string, data: any) => {
@@ -662,5 +716,107 @@ export async function setupIpc() {
 
   ipcMain.handle('data:export', async (_, { table, ids }) => {
     return await dataManager.exportToExcel(table, ids)
+  })
+
+  ipcMain.handle('media:download', async (_, { url, mediaType, downloadId: requestDownloadId, preferredName }: { url: string; mediaType?: 'video' | 'music'; downloadId?: string; preferredName?: string }) => {
+    const downloadId = requestDownloadId || `${Date.now()}_${Math.random().toString(16).slice(2)}`
+    if (typeof url !== 'string' || !/^https?:\/\//.test(url)) {
+      throw new Error('无效下载链接')
+    }
+    mediaDownloadStatus.set(downloadId, {
+      status: 'downloading',
+      progress: 0,
+      receivedBytes: 0,
+      totalBytes: 0
+    })
+    const response = await fetch(url)
+    if (!response.ok || !response.body) {
+      mediaDownloadStatus.set(downloadId, {
+        status: 'error',
+        progress: 0,
+        receivedBytes: 0,
+        totalBytes: 0,
+        error: `下载失败: ${response.status}`
+      })
+      throw new Error(`下载失败: ${response.status}`)
+    }
+    const contentType = response.headers.get('content-type') || ''
+    if (contentType.toLowerCase().includes('text/html')) {
+      mediaDownloadStatus.set(downloadId, {
+        status: 'error',
+        progress: 0,
+        receivedBytes: 0,
+        totalBytes: 0,
+        error: '下载链接返回网页内容，可能已失效'
+      })
+      throw new Error('下载链接返回网页内容，可能已失效')
+    }
+    const totalBytes = Number(response.headers.get('content-length') || 0)
+    const parsed = new URL(url)
+    const pathName = parsed.pathname || ''
+    const dispositionName = getFileNameFromDisposition(response.headers.get('content-disposition') || '')
+    const pathNameName = (() => {
+      const raw = path.basename(pathName)
+      try {
+        return decodeURIComponent(raw)
+      } catch {
+        return raw
+      }
+    })()
+    const headerOrPathName = dispositionName || pathNameName
+    const extFromName = path.extname(headerOrPathName)
+    const extFromType = getExtensionFromContentType(contentType)
+    const extByMediaType = mediaType === 'video' ? '.mp4' : mediaType === 'music' ? '.mp3' : '.bin'
+    const finalExt = extFromName || extFromType || extByMediaType
+    const baseFromName = path.basename(headerOrPathName, extFromName || undefined).trim()
+    const preferredBase = typeof preferredName === 'string' ? preferredName.trim() : ''
+    const finalBase = sanitizeFileName(preferredBase || baseFromName || `${mediaType || 'media'}_${Date.now()}`)
+    const fileName = `${finalBase}${finalExt}`
+    const downloadDir = app.getPath('downloads')
+    fs.mkdirSync(downloadDir, { recursive: true })
+    const filePath = ensureUniqueFilePath(downloadDir, fileName)
+
+    const writeStream = fs.createWriteStream(filePath)
+    let receivedBytes = 0
+    const progressStream = new Transform({
+      transform(chunk, _encoding, callback) {
+        const size = Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk)
+        receivedBytes += size
+        const progress = totalBytes > 0 ? Math.min(99, Math.floor((receivedBytes / totalBytes) * 100)) : 0
+        mediaDownloadStatus.set(downloadId, {
+          status: 'downloading',
+          progress,
+          receivedBytes,
+          totalBytes,
+          filePath
+        })
+        callback(null, chunk)
+      }
+    })
+    try {
+      await pipeline(Readable.fromWeb(response.body as any), progressStream, writeStream)
+      mediaDownloadStatus.set(downloadId, {
+        status: 'done',
+        progress: 100,
+        receivedBytes,
+        totalBytes,
+        filePath
+      })
+      return { success: true, filePath, downloadId }
+    } catch (err: any) {
+      mediaDownloadStatus.set(downloadId, {
+        status: 'error',
+        progress: 0,
+        receivedBytes,
+        totalBytes,
+        filePath,
+        error: err?.message || '下载失败'
+      })
+      throw err
+    }
+  })
+
+  ipcMain.handle('media:download:status', async (_, { downloadId }: { downloadId: string }) => {
+    return mediaDownloadStatus.get(downloadId) || null
   })
 }

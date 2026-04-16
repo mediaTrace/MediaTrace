@@ -42,7 +42,7 @@
       </el-aside>
       <el-container>
         <el-header height="46px" class="app-header drag-region">
-          <div class="header-title">媒体追踪系统-免费开源</div>
+          <div class="header-title">MediaTracer 媒体数据采集引擎 - 免费开源</div>
           <div class="window-controls no-drag">
             <div class="control-btn" @click="minimize"><el-icon><Minus /></el-icon></div>
             <div class="control-btn" @click="maximize">
