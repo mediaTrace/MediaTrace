@@ -13,6 +13,21 @@
 - **无感运行**：基于 Playwright 驱动，在系统设置中可配置无头模式（Headless），后台静默抓取数据。
 - **数据安全**：使用本地 SQLite 数据库存储所有核心数据与配置，数据完全掌握在自己手中。
 
+## 📸 系统截图
+
+<p align="center">
+  <img src="./static/01.png" width="48%" />
+  <img src="./static/02.png" width="48%" />
+</p>
+<p align="center">
+  <img src="./static/03.png" width="48%" />
+  <img src="./static/04.png" width="48%" />
+</p>
+<p align="center">
+  <img src="./static/05.png" width="48%" />
+  <img src="./static/06.png" width="48%" />
+</p>
+
 ## 🛠️ 技术栈
 
 本项目采用了最新的前端及桌面端技术栈进行构建：
