@@ -1,5 +1,7 @@
 # MediaTracer
 
+[English](./README_EN.md) | 简体中文
+
 **MediaTracer** 是一款基于 Electron + Playwright 的现代化桌面端媒体数据采集与任务调度平台。通过可视化的操作界面，帮助用户轻松实现主流媒体平台（如抖音、小红书等）的数据抓取、账号管理与自动化调度。
 
 ![MediaTracer](./src/assets/logo.png)
